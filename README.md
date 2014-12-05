@@ -14,6 +14,8 @@ Contact : sylvain dot monne at solucom dot fr
 
 http://twitter.com/bidord
 
+Special thanks to: Benjamin DELPY `gentilkiwi`
+
 # Library content
 * kek.krb5: Kerberos V5 ([RFC 4120](https://tools.ietf.org/html/rfc4120)) ASN.1 structures and basic protocol functions
 * kek.ccache: Credential Cache Binary Format ([cchache](http://www.gnu.org/software/shishi/manual/html_node/The-Credential-Cache-Binary-File-Format.html))
