@@ -53,10 +53,26 @@ def _build_sid(buf, eid, s):
         buf[-1] += pack('I', c)
     return pack('I', eid)
 
-def _build_pac_logon_info(domain_sid, domain_name, user_id, user_name, logon_time):
+def _build_extrasid(buf, eid, s):
+    buf.append('')
+    buf[-1] += pack('I', 1)
+    l = s.split('-')
+    assert l[0] == 'S'
+    l = [int(c) for c in l[1:]]
+    rpcsid = pack('IBB', len(l) - 2, l[0], len(l) - 2)
+    rpcsid += pack('>IH', l[1] >> 16, l[1] & 0xffff)
+    for c in l[2:]:
+        rpcsid += pack('I', c)
+    # add rpcsid and attributes
+    buf[-1]+=pack('I', 0x20030)
+    buf[-1]+=pack('I', 0x7)
+    buf.append('')
+    buf[-1]+=rpcsid
+    return pack('I', eid)
+
+def _build_pac_logon_info(domain_sid, domain_name, user_id, user_name, logon_time, extrasid):
     buf = []
     buf.append('')
-
     # ElementId
     buf[0] += pack('I', 0x20000)
     # LogonTime
@@ -100,7 +116,10 @@ def _build_pac_logon_info(domain_sid, domain_name, user_id, user_name, logon_tim
                                            (518, SE_GROUP_ALL),
                                            (519, SE_GROUP_ALL)])
     # UserFlags
-    buf[0] += pack('I', 0)
+    if extrasid is not None:
+        buf[0] += pack('I', 32)
+    else:
+        buf[0] += pack('I', 0)
     # UserSessionKey
     buf[0] += pack('QQ', 0, 0)
     # LogonServer
@@ -124,9 +143,15 @@ def _build_pac_logon_info(domain_sid, domain_name, user_id, user_name, logon_tim
     # Reserved3
     buf[0] += pack('I', 0)
     # SidCount
-    buf[0] += pack('I', 0)
+    if extrasid is not None:
+        buf[0] += pack('I', 1)
+    else:
+        buf[0] += pack('I', 0)
     # ExtraSids
-    buf[0] += pack('I', 0)
+    if extrasid is not None:
+        buf[0] += _build_extrasid(buf, 0x2002c, extrasid+'-519')
+    else:
+        buf[0] += pack('I', 0)
     # ResourceGroupDomainSid
     buf[0] += pack('I', 0)
     # ResourceGroupCount
@@ -156,13 +181,13 @@ def _build_pac_client_info(user_name, logon_time):
 
     return buf
 
-def build_pac(user_realm, user_name, user_sid, logon_time, server_key=(RSA_MD5, None), kdc_key=(RSA_MD5, None)):
+def build_pac(user_realm, user_name, user_sid, logon_time, extrasid, server_key=(RSA_MD5, None), kdc_key=(RSA_MD5, None)):
     logon_time = epoch2filetime(logon_time)
     domain_sid, user_id = user_sid.rsplit('-', 1)
     user_id = int(user_id)
     
     elements = []
-    elements.append((PAC_LOGON_INFO, _build_pac_logon_info(domain_sid, user_realm, user_id, user_name, logon_time)))
+    elements.append((PAC_LOGON_INFO, _build_pac_logon_info(domain_sid, user_realm, user_id, user_name, logon_time, extrasid)))
     elements.append((PAC_CLIENT_INFO, _build_pac_client_info(user_name, logon_time)))
     elements.append((PAC_SERVER_CHECKSUM, pack('I', server_key[0]) + chr(0)*16))
     elements.append((PAC_PRIVSVR_CHECKSUM, pack('I', kdc_key[0]) + chr(0)*16))
@@ -194,7 +219,7 @@ def build_pac(user_realm, user_name, user_sid, logon_time, server_key=(RSA_MD5, 
     chksum1 = checksum(server_key[0], buf, server_key[1])
     chksum2 = checksum(kdc_key[0], chksum1, kdc_key[1])
     buf = buf[:ch_offset1] + chksum1 + buf[ch_offset1+len(chksum1):ch_offset2] + chksum2 + buf[ch_offset2+len(chksum2):]
-    
+
     return buf
 
 # very dirty...
@@ -227,6 +252,27 @@ def pretty_print_pac(pac):
         else:
             print prefix + '<NULL>'
         return k, k2
+
+    def ppextrasid(prefix, pac, k, k2):
+        ptr = unpack_from('I', pac, k)[0]
+        k2+= 4
+        if ptr != 0:
+            ptrextrasid, attr = unpack_from('II', pac, k2)
+            print '%s[0x%08x] [0x%08x] (Attributes: 0x%08x)' % (prefix, ptr, ptrextrasid, attr)
+            k2+=12
+            rev, sac = unpack_from('BB', pac, k2)
+            k2 += 2
+            ia1, ia2 = unpack_from('>IH', pac, k2)
+            k2 += 6
+            ia = (ia1 << 16) | ia2
+            sa = unpack_from('I' * sac, pac, k2)
+            k2 += 4 * sac
+            print '          Extrasid value : S-%d-%d-%s' % (rev, ia, '-'.join(str(c) for c in sa))
+        else:
+            print prefix + '<NULL>'
+
+        return k, k2
+
 
     def ppsid(prefix, pac, k, k2):
         ptr = unpack_from('I', pac, k)[0]
@@ -332,7 +378,7 @@ def pretty_print_pac(pac):
             k += 4
             print '      SidCount: %d' % unpack_from('I', pac, k)
             k += 4
-            print '      ExtraSids: 0x%08x' % unpack_from('I', pac, k)
+            k, k2 = ppextrasid('      ExtraSids: ', pac, k, k2)
             k += 4
             k, k2 = ppsid('      ResourceGroupDomainSid: ', pac, k, k2)
             print '      ResourceGroupCount: %d' % unpack_from('I', pac, k)

